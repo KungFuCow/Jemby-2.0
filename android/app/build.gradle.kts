@@ -34,8 +34,9 @@ plugins {
     // it there is safe because push messaging bails immediately on TV anyway -
     // push_messaging_service.dart:38 returns unless PlatformDetection.isMobile,
     // and the initializeApp call is try/caught regardless.
-    id("com.google.gms.google-services")
-        .apply(System.getenv("MOONFIN_TEST_ID_SUFFIX").isNullOrEmpty())
+    // J’Emby uses an independent app ID. The upstream Google Services
+    // config has no matching client; TV push is not used, so skip it.
+    id("com.google.gms.google-services").apply(false)
     // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
