@@ -1560,7 +1560,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _applyChapters();
     if (item is AggregatedItem) {
       _segmentService = _createSegmentService(item);
-      await _segmentService.loadSegments(item.id);
+      final segmentService = _segmentService;
+      await segmentService.loadSegments(item.id);
+      // Position updates may have fired before the Emby chapter markers
+      // finished loading. Evaluate the current position immediately so the
+      // Skip Intro button doesn't wait for another player position event.
+      if (mounted &&
+          identical(_segmentService, segmentService) &&
+          identical(_queue.currentItem, item)) {
+        _checkSegments(_state.position);
+      }
     }
     unawaited(_ensureChaptersForCurrentItem());
     await trickplayLoad;
