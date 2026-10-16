@@ -771,17 +771,52 @@ class EmbyItemsApi implements ItemsApi {
 
   @override
   Future<List<Map<String, dynamic>>> getMediaSegments(String itemId) async {
-    // Emby has no MediaSegments API. It marks intros and credits as chapter
-    // markers on the item instead, so pull the chapters and translate the
-    // markers into the same segment shape the app already understands.
-    final Map<String, dynamic> item;
+    // J'Emby 1.0 successfully queried both the direct user-item endpoint and
+    // the user items list. Emby server versions may omit Chapters from either
+    // response, even with Fields=Chapters, so try each authenticated route.
+    Map<String, dynamic>? item;
+    List chapters = const [];
+
     try {
       item = await getItem(itemId, fields: 'Chapters');
+      chapters = item['Chapters'] as List? ?? const [];
     } catch (_) {
-      return const [];
+      // Try the fallback endpoint rather than silently dropping Skip Intro.
     }
 
-    final chapters = (item['Chapters'] as List?) ?? const [];
+    if (chapters.isEmpty) {
+      try {
+        final response = await _dio.get(
+          '/Users/${_getUserId()}/Items',
+          queryParameters: {'Ids': itemId, 'Fields': 'Chapters'},
+        );
+        final results = (response.data as Map?)?['Items'] as List?;
+        final first = results?.whereType<Map>().firstOrNull;
+        if (first != null) {
+          final fallback = first.cast<String, dynamic>();
+          chapters = fallback['Chapters'] as List? ?? const [];
+          if (chapters.isNotEmpty) item = fallback;
+        }
+      } catch (_) {}
+    }
+
+    if (chapters.isEmpty) {
+      try {
+        final response = await _dio.get(
+          '/Items/$itemId',
+          queryParameters: {
+            'UserId': _getUserId(),
+            'Fields': 'Chapters',
+          },
+        );
+        if (response.data is Map) {
+          final fallback = (response.data as Map).cast<String, dynamic>();
+          chapters = fallback['Chapters'] as List? ?? const [];
+          if (chapters.isNotEmpty) item = fallback;
+        }
+      } catch (_) {}
+    }
+
     if (chapters.isEmpty) return const [];
 
     final chapterStarts = <int>[];
@@ -828,7 +863,7 @@ class EmbyItemsApi implements ItemsApi {
     }
 
     // Credits have no end marker, so they run to the end of the item.
-    final runtime = (item['RunTimeTicks'] as num?)?.toInt();
+    final runtime = (item?['RunTimeTicks'] as num?)?.toInt();
     if (creditsStart != null && runtime != null && runtime > creditsStart) {
       segments.add({
         'Id': 'emby-credits-$itemId',
@@ -862,7 +897,11 @@ class EmbyItemsApi implements ItemsApi {
           ? _markerTypes[index]
           : null;
     }
-    final name = raw.toString().trim().toLowerCase();
+    // Older Emby builds also use singular CreditStart; accept casing and
+    // punctuation variations without changing numeric enum interpretation.
+    final name = raw.toString().trim().toLowerCase()
+        .replaceAll(RegExp(r'[^a-z]'), '');
+    if (name == 'creditstart') return 'creditsstart';
     return _markerTypes.contains(name) ? name : null;
   }
 
