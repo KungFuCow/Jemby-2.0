@@ -1,0 +1,47 @@
+name: J'Emby 2.0 Android TV Debug
+
+on:
+  push:
+    branches:
+      - jemby-2-branding
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-tv-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out J'Emby sources
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+      - name: Resolve Dart packages
+        run: flutter pub get
+      - name: Test Emby intro markers
+        run: |
+          cd packages/server_emby
+          flutter pub get
+          dart test
+      - name: Build Android TV debug APK
+        run: flutter build apk --debug --flavor androidTv --dart-define=DISTRIBUTION_CHANNEL=apk
+      - name: Label J'Emby APK
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-androidtv-debug.apk dist/JEmby-2.0-AndroidTV-debug.apk
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JEmby-2.0-AndroidTV-debug
+          path: dist/JEmby-2.0-AndroidTV-debug.apk
+          retention-days: 14
