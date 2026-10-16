@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:moonfin_design/moonfin_design.dart';
@@ -36,6 +37,7 @@ class _StartupScreenState extends State<StartupScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
+  List<String> _posterUrls = const [];
 
   @override
   void initState() {
@@ -76,6 +78,43 @@ class _StartupScreenState extends State<StartupScreen>
     }
   }
 
+  /// Preserve J'Emby 1.0's personalized poster collage, without holding
+  /// startup hostage if the Emby server is slow or temporarily unreachable.
+  Future<void> _loadJembySplashArt() async {
+    if (!GetIt.instance.isRegistered<MediaServerClient>()) return;
+    try {
+      final client = GetIt.instance<MediaServerClient>();
+      final data = await client.itemsApi.getItems(
+        recursive: true,
+        includeItemTypes: const ['Movie', 'Series'],
+        sortBy: 'DateCreated',
+        sortOrder: 'Descending',
+        limit: 60,
+      ).timeout(const Duration(seconds: 3));
+      final items = (data['Items'] as List?) ?? const [];
+      final ids = items
+          .whereType<Map>()
+          .map((e) => e['Id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final others = ids.skip(8).toList()..shuffle();
+      final selection = <String>[
+        ...ids.take(6),
+        ...others.take(6),
+      ];
+      if (!mounted || selection.isEmpty) return;
+      setState(() {
+        _posterUrls = selection
+            .map((id) => client.imageApi.getPrimaryImageUrl(id, maxWidth: 350))
+            .toList();
+      });
+      // Allow cached or locally served artwork a brief chance to paint.
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    } catch (_) {
+      // Keep the colorful offline tile fallback on failed connections.
+    }
+  }
+
   Future<void> _initialize() async {
     final session = GetIt.instance<SessionRepository>();
     final serverRepo = GetIt.instance<ServerRepository>();
@@ -97,6 +136,7 @@ class _StartupScreenState extends State<StartupScreen>
 
     if (widget.bootstrapActiveSession && session.activeUserId != null) {
       await _waitForNetworkSettle();
+      await _loadJembySplashArt();
       if (mounted) context.go(Destinations.home);
       return;
     }
@@ -162,6 +202,7 @@ class _StartupScreenState extends State<StartupScreen>
       }
 
       await _waitForNetworkSettle();
+      await _loadJembySplashArt();
       if (mounted) context.go(Destinations.home);
     } else {
       if (mounted) {
@@ -208,43 +249,83 @@ class _StartupScreenState extends State<StartupScreen>
       RequestInitialFocus(child: _buildContent(context));
 
   Widget _buildContent(BuildContext context) {
-    final gradientColors = [
-      AppColorScheme.background,
-      AppColorScheme.surfaceVariant,
-      AppColorScheme.surface,
+    // Same poster-mosaic splash and tagline as the original J'Emby client.
+    const tints = [
+      Color(0xFF274763),
+      Color(0xFF31546C),
+      Color(0xFF172F48),
+      Color(0xFF466079),
+      Color(0xFF1F4356),
     ];
+    final wide = MediaQuery.sizeOf(context).width >= 720;
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: gradientColors,
+      backgroundColor: const Color(0xFF03070E),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          GridView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              childAspectRatio: 1.34,
+            ),
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              final fallback = ColoredBox(color: tints[index % tints.length]);
+              if (_posterUrls.isEmpty) return fallback;
+              final url = _posterUrls[index % _posterUrls.length];
+              return Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+              );
+            },
           ),
-        ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/logo_and_text.png',
-                  height: _isLargeScreen ? 80 : 56,
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColorScheme.accent.withValues(alpha: 0.7),
+          const ColoredBox(color: Color(0x99000000)),
+          Center(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    'assets/images/jemby_logo.svg',
+                    width: wide ? 104 : 76,
+                    height: wide ? 104 : 76,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Text(
+                    "J'Emby",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: wide ? 58 : 38,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your Media. Your Way.',
+                    style: TextStyle(
+                      fontSize: wide ? 22 : 16,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  const SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Color(0xFF50B4F6),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
