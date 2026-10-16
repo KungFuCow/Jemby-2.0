@@ -23,14 +23,14 @@
         android:name=".MoonfinApplication"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
-        android:banner="@drawable/moonfin_tv_banner"
+        android:banner="@drawable/jemby_tv_banner"
         android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:banner="@drawable/moonfin_tv_banner"
+            android:banner="@drawable/jemby_tv_banner"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:supportsPictureInPicture="true"
